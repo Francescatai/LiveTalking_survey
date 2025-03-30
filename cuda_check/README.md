@@ -15,5 +15,9 @@ conda install cudatoolkit=11.3
 conda list cudatoolkit
 ``` 
 
+## 現在使用環境
+```bash
+conda activate nerfstream＿evelyn
+``` 
 
 
