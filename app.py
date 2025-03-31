@@ -45,6 +45,7 @@ import asyncio
 import torch
 from typing import Dict
 from logger import logger
+# import gc
 
 
 app = Flask(__name__)
@@ -432,11 +433,14 @@ if __name__ == '__main__':
         #     nerfreal = LipReal(opt,model)
         #     nerfreals.append(nerfreal)
     elif opt.model == 'ultralight':
-        from lightreal import LightReal,load_model,load_avatar,warm_up
+        from lightreal import LightReal, load_model, load_avatar, warm_up
         logger.info(opt)
         model = load_model(opt)
-        avatar = load_avatar(opt.avatar_id)
-        warm_up(opt.batch_size,avatar,160)
+        # 檢查 CUDA 是否可用，並傳遞設備參數
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        logger.info(f'Using device: {device}')
+        avatar = load_avatar(opt.avatar_id, device)
+        warm_up(opt.batch_size, avatar, 160)
 
     if opt.transport=='rtmp':
         thread_quit = Event()
@@ -497,4 +501,9 @@ if __name__ == '__main__':
     # server = pywsgi.WSGIServer(('0.0.0.0', 8000), app, handler_class=WebSocketHandler)
     # server.serve_forever()
     
+    # # 在處理每張圖像後
+    # gc.collect()
+    # if torch.cuda.is_available():
+    #     logger.info('empty cache')
+    #     torch.cuda.empty_cache()
     
