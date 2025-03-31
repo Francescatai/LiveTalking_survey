@@ -63,26 +63,47 @@ def load_model(opt):
     audio_processor = Audio2Feature()
     return audio_processor
 
-def load_avatar(avatar_id):
+def load_avatar(avatar_id, device=None):
+    # 如果沒有指定設備，則檢測可用設備
+    if device is None:
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    
     avatar_path = f"./data/avatars/{avatar_id}"
     full_imgs_path = f"{avatar_path}/full_imgs" 
     face_imgs_path = f"{avatar_path}/face_imgs" 
     coords_path = f"{avatar_path}/coords.pkl" 
     
-    model = Model(6, 'hubert').to(device)  # 假设Model是你自定义的类
-    model.load_state_dict(torch.load(f"{avatar_path}/ultralight.pth"))
+    # 使用 map_location 參數確保模型加載到正確的設備上
+    model = Model(6, 'hubert').to(device)
+    model.load_state_dict(torch.load(f"{avatar_path}/ultralight.pth", 
+                                     map_location=device))
     
     with open(coords_path, 'rb') as f:
         coord_list_cycle = pickle.load(f)
+    
+    # 批量加載圖像以減少內存壓力
     input_img_list = glob.glob(os.path.join(full_imgs_path, '*.[jpJP][pnPN]*[gG]'))
     input_img_list = sorted(input_img_list, key=lambda x: int(os.path.splitext(os.path.basename(x))[0]))
+    
+    # 限制加載的圖像數量，避免內存溢出
+    max_images = 1000  # 可以根據系統內存調整這個值
+    if len(input_img_list) > max_images:
+        logger.warning(f"限制加載圖像數量從 {len(input_img_list)} 到 {max_images}")
+        input_img_list = input_img_list[:max_images]
+    
     frame_list_cycle = read_imgs(input_img_list)
-    #self.imagecache = ImgCache(len(self.coord_list_cycle),self.full_imgs_path,1000)
+    
     input_face_list = glob.glob(os.path.join(face_imgs_path, '*.[jpJP][pnPN]*[gG]'))
     input_face_list = sorted(input_face_list, key=lambda x: int(os.path.splitext(os.path.basename(x))[0]))
+    
+    # 同樣限制臉部圖像
+    if len(input_face_list) > max_images:
+        logger.warning(f"限制加載臉部圖像數量從 {len(input_face_list)} 到 {max_images}")
+        input_face_list = input_face_list[:max_images]
+    
     face_list_cycle = read_imgs(input_face_list)
 
-    return model.eval(),frame_list_cycle,face_list_cycle,coord_list_cycle
+    return model.eval(), frame_list_cycle, face_list_cycle, coord_list_cycle
 
 
 @torch.no_grad()
@@ -96,9 +117,31 @@ def warm_up(batch_size,avatar,modelres):
 def read_imgs(img_list):
     frames = []
     logger.info('reading images...')
-    for img_path in tqdm(img_list):
-        frame = cv2.imread(img_path)
-        frames.append(frame)
+    
+    # 計算估計的內存使用量
+    sample_img = cv2.imread(img_list[0])
+    single_img_size = sample_img.shape[0] * sample_img.shape[1] * sample_img.shape[2] * 8 / 1024 / 1024  # MB
+    total_est_size = single_img_size * len(img_list)
+    logger.info(f"估計圖像將使用 {total_est_size:.2f} MB 內存")
+    
+    # 批量處理以減少內存壓力
+    batch_size = 100
+    for i in tqdm(range(0, len(img_list), batch_size)):
+        batch = img_list[i:i+batch_size]
+        batch_frames = []
+        for img_path in batch:
+            frame = cv2.imread(img_path)
+            # 可以考慮降低圖像分辨率以節省內存
+            # frame = cv2.resize(frame, (frame.shape[1]//2, frame.shape[0]//2))
+            batch_frames.append(frame)
+        frames.extend(batch_frames)
+        
+        # 強制垃圾回收
+        import gc
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    
     return frames
 
 def get_audio_features(features, index):
