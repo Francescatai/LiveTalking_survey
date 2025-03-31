@@ -19,3 +19,11 @@ workspace/log_ngp.txt
 models/
 *.log
 dist
+video_source/
+full_body_img/
+landmarks
+*.lms
+*.jpg
+*.png
+ultralight/results/avatars/ultralight_avatar1/coords.pkl
+ultralight/results/avatars/ultralight_avatar1/ultralight.pth
